@@ -1,4 +1,4 @@
-import { Bot } from "grammy";
+import { Bot, InlineQueryResultBuilder } from "grammy";
 import type { Context } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
 
@@ -6,8 +6,13 @@ export interface BotEnv {
   BOT_TOKEN: string;
 }
 
-const HELP =
-  "Send or forward any message and I'll send the raw Telegram <code>Update</code> I received — chat ids, user ids, stickers, forwards, the lot.";
+function helpText(username: string): string {
+  const mention = `<code>@${escapeHtml(username)}</code>`;
+  return (
+    "Send or forward any message and I'll send the raw Telegram <code>Update</code> I received — chat ids, user ids, stickers, forwards, the lot.\n\n" +
+    `Mention ${mention} in any chat, or reply to a message with ${mention}, and I'll dump that update there.`
+  );
+}
 
 const PRE_LIMIT = 3900;
 
@@ -20,12 +25,41 @@ export async function createBot(env: BotEnv): Promise<Bot> {
     botInfo = bot.botInfo;
   }
 
+  const help = helpText(bot.botInfo.username);
+
   bot.command("start", async (ctx) => {
-    await ctx.reply(HELP, { parse_mode: "HTML" });
+    await ctx.reply(help, { parse_mode: "HTML" });
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(HELP, { parse_mode: "HTML" });
+    await ctx.reply(help, { parse_mode: "HTML" });
+  });
+
+  bot.on("inline_query", async (ctx) => {
+    const chunks = chunkJson(ctx.update);
+    const results = chunks.map((chunk, index) => {
+      const title =
+        chunks.length === 1
+          ? "Raw Telegram update"
+          : `Raw Telegram update (${index + 1}/${chunks.length})`;
+      return InlineQueryResultBuilder.article(`update-${index}`, title, {
+        description: "Send the Update JSON for this inline query",
+      }).text(`<pre>${escapeHtml(chunk)}</pre>`, { parse_mode: "HTML" });
+    });
+
+    await ctx.answerInlineQuery(results, {
+      cache_time: 0,
+      is_personal: true,
+    });
+  });
+
+  bot.use(async (ctx, next) => {
+    const queryId = getGuestQueryId(ctx.update);
+    if (queryId) {
+      await sendGuestDump(ctx, queryId, ctx.update);
+      return;
+    }
+    await next();
   });
 
   bot.use(async (ctx) => {
@@ -34,6 +68,37 @@ export async function createBot(env: BotEnv): Promise<Bot> {
   });
 
   return bot;
+}
+
+type GuestApi = {
+  answerGuestQuery(args: {
+    guest_query_id: string;
+    result: unknown;
+  }): Promise<unknown>;
+};
+
+function getGuestQueryId(update: Update): string | undefined {
+  if (!("guest_message" in update)) return undefined;
+  const message = (update as { guest_message?: { guest_query_id?: string } })
+    .guest_message;
+  return message?.guest_query_id;
+}
+
+async function sendGuestDump(
+  ctx: Context,
+  guestQueryId: string,
+  update: Update,
+): Promise<void> {
+  const [chunk] = chunkJson(update);
+  if (chunk === undefined) return;
+
+  await (ctx.api.raw as GuestApi).answerGuestQuery({
+    guest_query_id: guestQueryId,
+    result: InlineQueryResultBuilder.article("dump", "Raw Telegram update").text(
+      `<pre>${escapeHtml(chunk)}</pre>`,
+      { parse_mode: "HTML" },
+    ),
+  });
 }
 
 async function sendUpdateDump(ctx: Context, update: Update): Promise<void> {

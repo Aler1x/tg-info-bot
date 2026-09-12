@@ -24,11 +24,8 @@ app.post("/webhook", async (c) => {
     update_id: update?.update_id,
     has_text: Boolean(update?.message?.text),
     has_sticker: Boolean(update?.message?.sticker),
-    has_custom_emoji: Boolean(
-      update?.message?.entities?.some(
-        (entity: { type?: string }) => entity.type === "custom_emoji",
-      ),
-    ),
+    has_inline_query: Boolean(update?.inline_query),
+    has_guest_message: Boolean(update?.guest_message),
   });
 
   try {
