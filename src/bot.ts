@@ -7,7 +7,7 @@ export interface BotEnv {
 }
 
 const HELP =
-  "Send or forward any message and I'll reply with the raw Telegram <code>Update</code> I received — chat ids, user ids, stickers, forwards, the lot.";
+  "Send or forward any message and I'll send the raw Telegram <code>Update</code> I received — chat ids, user ids, stickers, forwards, the lot.";
 
 const PRE_LIMIT = 3900;
 
@@ -22,7 +22,6 @@ export async function createBot(env: BotEnv): Promise<Bot> {
 
   bot.command("start", async (ctx) => {
     await ctx.reply(HELP, { parse_mode: "HTML" });
-    await replyUpdateDump(ctx, ctx.update);
   });
 
   bot.command("help", async (ctx) => {
@@ -31,20 +30,17 @@ export async function createBot(env: BotEnv): Promise<Bot> {
 
   bot.use(async (ctx) => {
     if (!ctx.chat) return;
-    await replyUpdateDump(ctx, ctx.update);
+    await sendUpdateDump(ctx, ctx.update);
   });
 
   return bot;
 }
 
-async function replyUpdateDump(ctx: Context, update: Update): Promise<void> {
+async function sendUpdateDump(ctx: Context, update: Update): Promise<void> {
   const chunks = chunkJson(update);
   for (const chunk of chunks) {
     await ctx.reply(`<pre>${escapeHtml(chunk)}</pre>`, {
       parse_mode: "HTML",
-      reply_parameters: ctx.msg
-        ? { message_id: ctx.msg.message_id }
-        : undefined,
     });
   }
 }
